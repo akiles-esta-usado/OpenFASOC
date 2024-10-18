@@ -3,7 +3,7 @@ from gdsfactory.component import Component
 from gdsfactory.components.rectangle import rectangle
 from pydantic import validate_arguments
 from glayout.flow.pdk.mappedpdk import MappedPDK
-from math import floor
+from math import floor, sqrt
 from typing import Optional, Union
 from glayout.flow.pdk.util.comp_utils import evaluate_bbox, prec_array, to_float, move, prec_ref_center, to_decimal
 from glayout.flow.pdk.util.port_utils import rename_ports_by_orientation, print_ports
@@ -89,6 +89,70 @@ def __get_viastack_minseperation(pdk: MappedPDK, viastack: Component, ordered_la
     return pdk.snap_to_2xgrid([via_spacing, 2*top_enclosure], return_type="float")
 
 
+def get_metalization_via_width(
+    pdk: MappedPDK, glayer: str, bottom_via: str = None, top_via: str = None
+):
+    """
+    Estimates the minimum width of a metal or poly used on vias
+    """
+    width = 0
+
+    if bottom_via:
+        bottom_width = pdk.get_grule(bottom_via)["width"]
+        bottom_enclosure = pdk.get_grule(glayer, bottom_via)["min_enclosure"]
+        width_contender = bottom_width + 2 * bottom_enclosure
+
+        width = width_contender if width_contender > width else width
+
+    if top_via:
+        top_width = pdk.get_grule(top_via)["width"]
+        top_enclosure = pdk.get_grule(glayer, top_via)["min_enclosure"]
+        width_contender = top_width + 2 * top_enclosure
+
+        width = width_contender if width_contender > width else width
+
+    if (
+        "min_area" in pdk.get_grule(glayer)
+        and pdk.get_grule(glayer)["min_area"] > width**2
+    ):
+        width = sqrt(pdk.get_grule(glayer)["min_area"])
+
+    return width
+
+
+def get_via_width(pdk: MappedPDK):
+    """
+    Returns a dictionary with the widths used by vias and metalization based on
+    enclosure and min_area
+    """
+    width = {
+        "mcon": pdk.get_grule("mcon")["width"],
+        "via1": pdk.get_grule("via1")["width"],
+        "via2": pdk.get_grule("via2")["width"],
+        "via3": pdk.get_grule("via3")["width"],
+        "via4": pdk.get_grule("via4")["width"],
+    }
+
+    width["poly"] = get_metalization_via_width(pdk, "poly", top_via="mcon")
+    width["active_diff"] = get_metalization_via_width(pdk, "active_diff", top_via="mcon")
+    width["active_tap"] = get_metalization_via_width(pdk, "active_tap", bottom_via="mcon")
+    width["met1"] = get_metalization_via_width(
+        pdk, "met1", bottom_via="mcon", top_via="via1"
+    )
+    width["met2"] = get_metalization_via_width(
+        pdk, "met2", bottom_via="via1", top_via="via2"
+    )
+    width["met3"] = get_metalization_via_width(
+        pdk, "met3", bottom_via="via2", top_via="via3"
+    )
+    width["met4"] = get_metalization_via_width(
+        pdk, "met4", bottom_via="via3", top_via="via4"
+    )
+    width["met5"] = get_metalization_via_width(pdk, "met5", bottom_via="via4")
+
+    return width
+
+
 @cell
 def via_stack(
     pdk: MappedPDK,
@@ -126,12 +190,20 @@ def via_stack(
     ordered_layer_info = __error_check_order_layers(pdk, glayer1, glayer2)
     level1, level2 = ordered_layer_info[0]
     glayer1, glayer2 = ordered_layer_info[1]
+
+    widths = get_via_width(pdk)
+
     viastack = Component()
     # if same level return component with min_width rectangle on that layer
     if level1 == level2:
         if same_layer_behavior=="lay_nothing":
             return viastack
-        min_square = viastack << rectangle(size=2*[pdk.get_grule(glayer1)["min_width"]],layer=pdk.get_glayer(glayer1), centered=centered)
+        min_square = viastack << rectangle(
+            size=(widths[glayer1], widths[glayer1]),
+            layer=pdk.get_glayer(glayer1),
+            centered=centered,
+        )
+
         # update ports
         if level1==0:# both poly or active
             viastack.add_ports(min_square.get_ports_list(),prefix="bottom_layer_")
@@ -150,8 +222,16 @@ def via_stack(
             # place met/via, do not place via if on top layer
             if level != level2:
                 via_dim = pdk.get_grule(via_name)["width"]
-                via_ref = viastack << rectangle(size=[via_dim,via_dim],layer=pdk.get_glayer(via_name), centered=True)
-            lay_ref = viastack << rectangle(size=[layer_dim,layer_dim],layer=pdk.get_glayer(layer_name), centered=True)
+                via_ref = viastack << rectangle(
+                    size=[widths[via_name], widths[via_name]],
+                    layer=pdk.get_glayer(via_name),
+                    centered=True,
+                )
+            lay_ref = viastack << rectangle(
+                size=[widths[layer_name], widths[layer_name]],
+                layer=pdk.get_glayer(layer_name),
+                centered=True,
+            )
             # update ports
             if layer_name == glayer1:
                 ports_to_add["bottom_layer_"] = lay_ref.get_ports_list()
