@@ -36,18 +36,46 @@ def add_layer_rule(grules: dict, layer1: str, rules: dict[str, dict]):
                 )
 
 
-# DNWell
+# Section 4.2: Special Layer Configuration
+# Derived layers
+# - PWell               PWell.drawing OR not in NWell and not in PWell:block
+# - nSD                 nSD.drawing   OR not in pSD   and not in nSD:block
+# - nBuLay (dnwell)
+# - N+Activ             Activ + nSD
+# - P+Activ             Activ + pSD
+# - nWell Tie           n+Activ Inside Nwell
+# - Substrate Tie       p+Activ Inside PWell
+# - Gate                Activ + GatPoly
+# - NFET                GatPoly contained on Activ not in pSD
+# - PFET                GatPoly over p+Activ contained inside NWell
+
+# DNWell - NBuLay N Burried Layer
+# Allows existence of isolated nmos
+# NBL.a   1.00     Min. nBuLay width
+# NBL.b   1.50     Min. nBuLay space or notch (same net)
+# NBL.c   3.20     Min. PWell width between nBuLay regions (different net) (Note 1)
+# NBL.d   2.20     Min. PWell width between nBuLay and NWell (different net) (Note 1)
+# NBL.e   1.00     Min. nBuLay space to unrelated N+Activ
+# NBL.f   0.50     Min. nBuLay space to unrelated P+Activ
 add_layer_rule(
     grulesobj,
     "dnwell",
     {
-        "dnwell": {},
+        "dnwell": {
+            "min_width": 1,  # NBL.a
+        },
         "pwell": {},
         "nwell": {},
         "p+s/d": {},
         "n+s/d": {},
-        "active_diff": {},
-        "active_tap": {},
+        "active_diff": {
+            "min_enclosure": 1.0,  # NBL.e NBL.f
+        },
+        "active_tap": {
+            "min_enclosure": 1.0,  # NBL.e NBL.f
+            # "min_enclosure": 0.62,  # ?
+            # "min_separation": 0.62,  # ?
+        },
         "poly": {},
         "mcon": {},
         "met1": {},
@@ -126,7 +154,10 @@ add_layer_rule(
             "min_enclosure": 0.62,  # NW.c, NW.c1, NW.e, NW.e1. Don't understand anything
             "min_separation": 0.62,  # NW.d, NW.d1, NW.f, NW.f1. Don't understand anything
         },
-        "active_tap": {},
+        "active_tap": {
+            "min_enclosure": 0.62,  # NW.c, NW.c1, NW.e, NW.e1. Don't understand anything
+            "min_separation": 0.62,  # NW.d, NW.d1, NW.f, NW.f1. Don't understand anything
+        },
         "poly": {},
         "mcon": {},
         "met1": {},
@@ -175,7 +206,7 @@ add_layer_rule(
         },
         "n+s/d": {},
         "active_diff": {
-            "min_enclosure": 0.23  # TODO
+            "min_enclosure": 0.4  # pSD.i, pSD.i1
         },
         "active_tap": {
             "min_enclosure": 0.16  # TODO
@@ -246,6 +277,7 @@ add_layer_rule(
         },
         "poly": {
             "overhang": 0.23,  # Act.c ?
+            # "overhang": 0.40,  # Act.c ? pSD.i, pSD.i1
             "min_separation": 0.1,  # TODO
         },
         "mcon": {

@@ -27,7 +27,7 @@ sg13g2_glayer_mapping = {
     "p+s/d": "pSD.drawing",
     "nwell": "NWell.drawing",
     "pwell": "PWell.drawing",
-    "dnwell": "TEXT.drawing",
+    "dnwell": "nBuLay.drawing",  # N Burried Layer
     "capmet": "MIM.drawing",
 }
 
