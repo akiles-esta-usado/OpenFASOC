@@ -164,7 +164,7 @@ def multiplier(
     # error checking
     if "+s/d" not in sdlayer:
         raise ValueError("specify + doped region for multiplier")
-    if not "met" in sd_route_topmet or not "met" in gate_route_topmet:
+    if "met" not in sd_route_topmet or "met" not in gate_route_topmet:
         raise ValueError("topmet specified must be metal layer")
     if rmult:
         if rmult<1:
@@ -176,6 +176,8 @@ def multiplier(
         raise ValueError("routing multipliers must be positive int")
     if fingers < 1:
         raise ValueError("number of fingers must be positive int")
+    sd_route_extension = pdk.snap_to_2xgrid(sd_route_extension)
+    
     # argument parsing and rule setup
     min_length = pdk.get_grule("poly")["min_width"]
     length = min_length if (length or min_length) <= min_length else length
@@ -191,16 +193,24 @@ def multiplier(
         # place vias, then straight route from top port to via-botmet_N
         sd_N_port = multiplier.ports["leftsd_top_met_N"]
         sdvia = via_stack(pdk, "met1", sd_route_topmet)
-        sdmet_hieght = sd_rmult*evaluate_bbox(sdvia)[1]
-        sdroute_minsep = pdk.get_grule(sd_route_topmet)["min_separation"]
+        sdmet_height = sd_rmult * evaluate_bbox(sdvia)[1]
         sdvia_ports = list()
-        for finger in range(fingers+1):
-            diff_top_port = movey(sd_N_port,destination=width/2)
+
+        sd_offset = pdk.get_grule(sd_route_topmet)["min_separation"]
+
+        for finger in range(fingers + 1):
+            diff_top_port = movey(sd_N_port, destination=width / 2)
             # place sdvia such that metal does not overlap diffusion
-            big_extension = sdroute_minsep + sdmet_hieght/2 + sdmet_hieght
-            sdvia_extension = big_extension if finger % 2 else sdmet_hieght/2
+
+            sdvia_extension = sd_offset + sd_route_extension
+            if finger % 2:
+                sdvia_extension += (
+                    sdmet_height
+                    + pdk.get_grule(sd_route_topmet)["min_separation"]
+                )
+
             sdvia_ref = align_comp_to_port(sdvia,diff_top_port,alignment=('c','t'))
-            multiplier.add(sdvia_ref.movey(sdvia_extension + pdk.snap_to_2xgrid(sd_route_extension)))
+            multiplier.add(sdvia_ref.movey(sdvia_extension))
             multiplier << straight_route(pdk, diff_top_port, sdvia_ref.ports["bottom_met_N"])
             sdvia_ports += [sdvia_ref.ports["top_met_W"], sdvia_ref.ports["top_met_E"]]
             # get the next port (break before this if last iteration because port D.N.E. and num gates=fingers)
@@ -220,7 +230,7 @@ def multiplier(
         multiplier.add(gate_ref)
         # place route met: source, drain
         sd_width = sdvia_ports[-1].center[0] - sdvia_ports[0].center[0]
-        sd_route = rectangle(size=(sd_width,sdmet_hieght),layer=pdk.get_glayer(sd_route_topmet),centered=True)
+        sd_route = rectangle(size=(sd_width,sdmet_height),layer=pdk.get_glayer(sd_route_topmet),centered=True)
         source = align_comp_to_port(sd_route.copy(), sdvia_ports[0], alignment=(None,'c'))
         drain = align_comp_to_port(sd_route.copy(), sdvia_ports[2], alignment=(None,'c'))
         multiplier.add(source)
@@ -340,6 +350,10 @@ def __mult_array_macro(
         for side in ["N","E","S","W"]:
             aliasport = pin + "_" + side
             actualport = "multiplier_0_" + aliasport
+
+            if actualport not in multiplier_arr.ports:
+                continue
+            
             multiplier_arr.add_port(port=multiplier_arr.ports[actualport],name=aliasport)
     # recenter
     final_arr = Component()
@@ -370,7 +384,8 @@ def nmos(
     interfinger_rmult: int=1,
     tie_layers: tuple[str,str] = ("met2","met1"),
     substrate_tap_layers: tuple[str,str] = ("met2","met1"),
-    dummy_routes: bool=True
+    dummy_routes: bool=True,
+    routing: Optional[bool] = True
 ) -> Component:
     """Generic NMOS generator
     pdk: mapped pdk to use
@@ -418,7 +433,8 @@ def nmos(
         sd_rmult=sd_rmult,
         gate_rmult=gate_rmult,
         interfinger_rmult=interfinger_rmult,
-        dummy_routes=dummy_routes
+        dummy_routes=dummy_routes,
+        routing=routing
     )
     multiplier_arr_ref = multiplier_arr.ref()
     nfet.add(multiplier_arr_ref)
@@ -515,7 +531,8 @@ def pmos(
     interfinger_rmult: int=1,
     tie_layers: tuple[str,str] = ("met2","met1"),
     substrate_tap_layers: tuple[str,str] = ("met2","met1"),
-    dummy_routes: bool=True
+    dummy_routes: bool=True,
+    routing: Optional[bool] = True
 ) -> Component:
     """Generic PMOS generator
     pdk: mapped pdk to use
@@ -563,7 +580,8 @@ def pmos(
         gate_rmult=gate_rmult,
         interfinger_rmult=interfinger_rmult,
         sd_rmult=sd_rmult,
-        dummy_routes=dummy_routes
+        dummy_routes=dummy_routes,
+        routing=routing
     )
     multiplier_arr_ref = multiplier_arr.ref()
     pfet.add(multiplier_arr_ref)

@@ -475,7 +475,7 @@ add_layer_rule(
     {
         "met2": {
             "min_width": 0.20,  # Mn.a
-            "min_separation": 0.21,  # Mn.a
+            "min_separation": 0.21,  # Mn.b
             "min_area": 0.1444,  # Mn.d, added extra 0.0004 to avoid sqrt errors
         },
         "via2": {
